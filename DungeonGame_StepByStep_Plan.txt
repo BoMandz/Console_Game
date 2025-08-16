@@ -1,0 +1,389 @@
+
+Dungeon Crawler – Step‑by‑Step Build Plan (with Angels, Devils, Contracts, and Tactical Combat)
+==============================================================================================
+
+Target scope (v1):
+- 10 dungeon layers (start with 64x64 each; viewport 16x16), player party of 3–5 heroes.
+- Exploration on an overworld grid; tactical turn-based combat on a small battle grid (~10x10).
+- Per-unit equipment (no sharing one item on multiple units simultaneously).
+- Stats: HP, Attack, Defense, Speed, Intelligence, Mana.
+- Intelligence affects crowd-control (CC) resistance AND powers/specials.
+- Mana fuels special abilities for ALL classes (not only mages).
+- Devil/Angel rooms with deals, blessings, hostility, and alignment memory.
+- Save/Load and data-driven content via JSON.
+
+----------------------------------------------------------------------------------------------
+PHASE 0 — Project Setup
+----------------------------------------------------------------------------------------------
+0.1 Choose rendering path
+    A) Console + custom font (advanced) — lets letters look like sprites by shipping a custom font.
+    B) SFML or Raylib (recommended) — true 32x32 PNG tiles, smooth rendering, easy keyboard input.
+    -> For v1, use SFML (Windows-friendly, simple API).
+
+0.2 Folder layout (create now)
+/src
+  main.cpp
+  /core         Game.cpp/h, SaveManager.cpp/h, RNG.cpp/h, Config.cpp/h
+  /world        Dungeon.cpp/h, Room.cpp/h, Tile.cpp/h, Generator.cpp/h
+  /entities     Entity.cpp/h, Hero.cpp/h, Enemy.cpp/h
+  /items        Item.cpp/h, Relic.cpp/h, Inventory.cpp/h, LootTable.cpp/h
+  /combat       CombatManager.cpp/h, Ability.cpp/h, Effect.cpp/h, AI.cpp/h
+  /encounters   DevilEncounter.cpp/h, AngelEncounter.cpp/h, BossEncounter.cpp/h
+  /ui           Renderer.cpp/h, Input.cpp/h, Hud.cpp/h, Panels.cpp/h
+/assets
+  /sprites      (PNG tiles, 16x16 or 32x32)
+  /fonts
+/data
+  items.json, enemies.json, abilities.json, contracts.json, blessings.json, rooms.json
+/build (ignored by VCS)
+
+0.3 Tooling
+    - Compiler: C++17 or newer.
+    - Library: SFML 2.6+ (graphics, window, system, audio optional).
+    - JSON: nlohmann/json (single-header).
+    - Enable warnings: -Wall -Wextra -Werror (or similar).
+
+0.4 Git & CI (optional now, recommended later)
+    - Initialize repo; add .gitignore (build/, *.exe, .DS_Store).
+    - Add a simple CI job that builds the project.
+
+----------------------------------------------------------------------------------------------
+PHASE 1 — Core Types & Game Loop
+----------------------------------------------------------------------------------------------
+1.1 Define core types (headers only first)
+    // Shared stats
+    struct Stats {
+        int hpMax, hp;
+        int manaMax, mana;
+        int atk;
+        int def;
+        int spd;           // turn order + move range
+        int intl;          // CC resist + special potency
+    };
+
+    // Tile & room
+    enum class TileType { Wall, Floor, Door, StairUp, StairDown, Chest, Trap, DevilGate, AngelAltar, BossGate };
+    struct Tile { TileType type; bool discovered=false; };
+
+    // Positions
+    struct GridPos { int x, y; };
+
+    // Equipment slots
+    enum class Slot { Weapon, Armor, Boots, Cloak, Helmet, Accessory };
+
+1.2 Game state skeleton
+    class Game {
+        // world
+        std::vector<std::vector<std::vector<Tile>>> layers; // [layer][y][x]
+        int currentLayer = 0;
+        GridPos playerPos {1,1};
+        const int LAYERS = 10, W = 64, H = 64;  // start small
+        // party & inventory
+        std::vector<class Hero*> party;
+        class Inventory* sharedInventory;
+        // mode
+        enum class Mode { Explore, Combat, Encounter };
+        Mode mode = Mode::Explore;
+        // methods: init(), update(), render(), handleInput(), save(), load()
+    };
+
+1.3 Main loop
+    - while (window open):
+        - poll input
+        - update (according to mode)
+        - render (camera-centered 16x16 viewport)
+    - Keep each step small and testable.
+
+----------------------------------------------------------------------------------------------
+PHASE 2 — Dungeon Generation & Exploration
+----------------------------------------------------------------------------------------------
+2.1 Simple generator (v1)
+    - Algorithm: random rooms + corridors (binary space partitioning OR drunkard walk).
+    - Guarantee start room, stairs down, and 2–4 special rooms:
+        * 1 DevilGate (chance), 1 AngelAltar (chance), 1–2 Treasure rooms, 1 BossGate on deepest floor.
+    - Ensure connectivity with a flood-fill test.
+
+2.2 Placement rules
+    - Start on layer 0 at a floor tile far from stair down.
+    - Place basic enemies in clusters near treasure or gates.
+    - Ensure at least one path to stairs on each layer.
+
+2.3 Viewport & camera
+    - View size: 16x16 tiles.
+    - Camera center on player; clamp to map edges.
+    - Renderer draws tiles first, then entities, then UI/HUD.
+
+2.4 Movement & interaction
+    - Arrow keys/WASD move if next tile is Floor/Door.
+    - Step on StairDown → descend (if not in combat).
+    - Step on DevilGate/AngelAltar → switch to Encounter mode.
+
+----------------------------------------------------------------------------------------------
+PHASE 3 — Entities, Items, and Equipment
+----------------------------------------------------------------------------------------------
+3.1 Entity base
+    class Entity {
+      public:
+        std::string id, name;
+        Stats statsBase;
+        Stats statsCurrent;  // hp/mana/etc.
+        GridPos pos;
+        bool isAlive() const;
+    };
+
+3.2 Hero
+    class Hero : public Entity {
+      public:
+        std::map<Slot, class Item*> equipment; // unique instances
+        std::vector<class Ability*> abilities;
+        // contract info
+        bool hasDevilContract = false;
+        int contractTier = 0;           // upgrades via angel fights won
+        std::string contractId;         // which devil power
+    };
+
+3.3 Enemy
+    class Enemy : public Entity {
+      public:
+        std::string archetype; // "goblin", "warlock", "angelGuardian", "devil"
+        std::vector<class Ability*> abilities;
+        // simple AI flags
+        bool prefersRanged=false, prefersMelee=true;
+    };
+
+3.4 Items & Relics
+    class Item {
+      public:
+        std::string id, name;
+        Slot slot;
+        int atkBonus=0, defBonus=0, spdBonus=0, intlBonus=0, hpBonus=0, manaBonus=0;
+        // Optional: on-hit effects, passive flags
+    };
+    class Relic : public Item { // passive unique effects
+      public:
+        std::string passiveEffectId; // e.g., "first_hit_negated"
+    };
+
+3.5 Unique-per-unit rule
+    - Inventory tracks ownership: item has field `ownerId` or is nullptr.
+    - When equipping an item, unequip from previous owner first.
+    - Prevent equipping same item on multiple heroes simultaneously.
+
+3.6 Data-driven content
+    - /data/items.json — define items & stat bonuses.
+    - /data/enemies.json — base stats & abilities.
+    - /data/abilities.json — costs, ranges, effects.
+    - /data/contracts.json — sacrifices & powers.
+    - /data/blessings.json — holy items & effects.
+
+----------------------------------------------------------------------------------------------
+PHASE 4 — Combat System (Tactical Grid, HoMM-like)
+----------------------------------------------------------------------------------------------
+4.1 Battle map
+    - 10x10 grid; obstacles and cover tiles.
+    - Spawn party left-bottom; enemies right-top.
+
+4.2 Turn order
+    - Initiative list sorted by (spd, tie-breaker = coin flip).
+    - Round = everyone acts once (skip if stunned/disabled).
+
+4.3 Actions per turn
+    - Move up to `moveRange = clamp(1, spd/2, 6)` tiles (tune later).
+    - Then choose ONE: Attack, Ability (mana), Use Item, Defend, Wait.
+    - Range checks (melee 1 tile, ranged by weapon or ability).
+
+4.4 Damage & defense
+    - Physical: damage = max(1, atk + roll(-2..+2) − target.def).
+    - Magical/Special: base = abilityPower + k1*intl; then reduce by target.def (single defense stat).
+
+4.5 Intelligence vs CC (stun/sleep/fear)
+    - BaseDuration: specified by ability (e.g., stun = 2 turns).
+    - Resist check each end of your turn:
+        ResistScore = YourInt − EnemyInt
+        if ResistScore >= 10 → reduce remaining duration by 2 and gain +2 temporary Speed next round
+        else if ResistScore >= 5 → reduce duration by 1 and gain +1 temporary Speed next round
+        else if ResistScore <= -10 → duration +1 (max +1 once), no speed bonus
+        else → duration unchanged
+      (This models “20 INT vs 10 INT feels like +2 Speed while stunned.” Tune thresholds later.)
+
+4.6 Specials & Mana (for ALL classes)
+    - Knight: Shield Slam (stun 1, cost 10), Rally (team +Def for 2 turns, cost 8)
+    - Rogue: Shadow Step (teleport + backstab, cost 8), Smoke Bomb (blind area, cost 10)
+    - Wizard: Fireball (AoE, cost 12), Mana Shield (reduce damage 50% for 2 turns, cost 10)
+    - Warlock: Hex (−Int −Spd, cost 12), Life Drain (damage + heal, cost 10)
+
+4.7 AI (very simple v1)
+    - If low HP → retreat or defend; else move towards nearest target.
+    - Prefer using abilities when they would KO or CC a target.
+
+4.8 Victory/defeat
+    - Victory → loot + XP + chance of equipment drops.
+    - Defeat → game over or lose 1 hero (hard mode), then retreat.
+
+----------------------------------------------------------------------------------------------
+PHASE 5 — Encounters: Devils & Angels
+----------------------------------------------------------------------------------------------
+5.1 Devil Encounter
+    - Trigger from DevilGate room.
+    - Offer Contract: (Sacrifice) → (Power). Example: −5 Spd → First hit each battle deals 0.
+    - Acceptance: apply stat loss permanently, grant power (set `hasDevilContract=true`, tier=1).
+    - Refusal or Devil refuses you:
+        Option A: leave
+        Option B: ATTACK Devil (mini-boss)
+            * Win → Devil Relic drop + alignment memory increases future Devil hostility & loot quality
+            * Lose → harsh penalty (hpMax −X, item lost, or hero death)
+
+    - Only 2 heroes can contract with SAME Devil entity in a run.
+
+5.2 Angel Encounter
+    - Trigger from AngelAltar room.
+    - If >50% of party has Devil contracts → Angel always attacks.
+      * Win → upgrade ONE existing contract by +1 tier (80%→100%, 1 free hit→2 free hits).
+    - If ≤50%:
+      * Chance to PRAY (get holy item/blessing); no fight.
+      * But Devil rejection chance +X% in future (they “remember” betrayal).
+    - Symmetry option: you can attack Angel for holy relics; this increases future Angel aggression.
+
+5.3 Alignment Memory
+    - Track `angelFavor` and `devilFavor` integers in Game.
+    - Contract refusal chance = base ± favor modifiers.
+    - Devil loot tier on kill = base + devilFavor/threshold.
+    - Angel blessing quality = base + angelFavor/threshold.
+    - Killing one side increases the other side’s hostility accordingly.
+
+----------------------------------------------------------------------------------------------
+PHASE 6 — Loot, XP, Leveling, and Economy
+----------------------------------------------------------------------------------------------
+6.1 Loot tables
+    - Per-room and per-enemy loot rolls (defined in /data/loot.json or embedded for v1).
+    - Rarities: Common, Uncommon, Rare, Epic, Legendary.
+    - Bound to floor depth: deeper → better.
+
+6.2 XP & Levels
+    - Each hero gains XP from battles.
+    - On level up: pick +2 points distributed across (atk/def/spd/intl), +hpMax +manaMax small buffs.
+    - Every N levels unlock a new ability slot.
+
+6.3 Shops/Altars (optional later)
+    - Spend gold/souls to reroll Devil offers or buy holy items.
+
+----------------------------------------------------------------------------------------------
+PHASE 7 — UI & Rendering
+----------------------------------------------------------------------------------------------
+7.1 Exploration HUD
+    - Top-left: Layer, coords, minimap (16x16 discovered window).
+    - Top-right: Party quick stats (HP/Mana icons).
+    - Bottom: Message log (last 6 events).
+
+7.2 Combat UI
+    - Left: Turn order queue portraits.
+    - Bottom: Action bar (Move/Attack/Ability/Item/Defend/Wait).
+    - Right: Selected unit stats & equipment.
+
+7.3 Inventory/Equipment screen
+    - Drag/drop items between inventory and unit slots.
+    - Show stat deltas before/after equip.
+
+----------------------------------------------------------------------------------------------
+PHASE 8 — Save/Load & Data
+----------------------------------------------------------------------------------------------
+8.1 Save fields
+    - RNG seed, current layer, player position.
+    - Party (stats, items, contracts).
+    - Inventory, gold, relics.
+    - Alignment (angelFavor, devilFavor).
+    - Discovered map data (per-layer bitset or small RLE).
+
+8.2 JSON examples (tiny schemas)
+    items.json:
+    [
+      { "id":"steel_sword","name":"Steel Sword","slot":"Weapon","atk":8,"def":0,"spd":0,"intl":0,"hp":0,"mana":0 },
+      { "id":"plate_armor","name":"Plate Armor","slot":"Armor","atk":0,"def":12,"spd":-1 }
+    ]
+
+    abilities.json:
+    [
+      { "id":"shield_slam","name":"Shield Slam","cost":10,"range":1,"effect":"stun","power":5,"scales":"atk" },
+      { "id":"fireball","name":"Fireball","cost":12,"range":4,"effect":"burn","power":12,"scales":"intl","aoe":1 }
+    ]
+
+    contracts.json:
+    [
+      { "id":"first_hit_null","sacrifice":{"spd":-5}, "power":{"effect":"first_hit_immune","tier1":1,"tier2":2} },
+      { "id":"double_strike","sacrifice":{"hpMaxPct":-20}, "power":{"effect":"double_attack","tier1":{"dmgPct":80},"tier2":{"dmgPct":100}} }
+    ]
+
+    blessings.json:
+    [
+      { "id":"holy_water","effect":"remove_curse_or_reduce_contract_cost" },
+      { "id":"angel_feather","+spd":1,"+def":1 }
+    ]
+
+----------------------------------------------------------------------------------------------
+PHASE 9 — Balancing & Tuning (quick rules of thumb)
+----------------------------------------------------------------------------------------------
+9.1 Base stats (level 1 guideline)
+    - Knight: HP 100, Mana 30, Atk 15, Def 10, Spd 4, Int 8
+    - Rogue : HP 80,  Mana 35, Atk 12, Def 8,  Spd 6, Int 10
+    - Wizard: HP 70,  Mana 50, Atk 5,  Def 7,  Spd 5, Int 15
+    - Warlock:HP 75,  Mana 45, Atk 7,  Def 7,  Spd 5, Int 16
+
+9.2 Damage pacing
+    - Average TTK (time-to-kill) of a basic enemy ~ 2–3 full turns for a single hero.
+    - Boss ~ 5–8 turns for a full party.
+
+9.3 Contracts
+    - Early devil costs: small (−3 spd, −10% hpMax) → modest powers.
+    - Deep devil costs: big (−6 spd, −25% hpMax, −5 int) → strong powers.
+
+9.4 Angel/Devil memory
+    - Each “hostile kill” adds +1 hostility on that side and −1 favor on the other.
+    - Refusal chance = base 30% + 10% * max(0, (hostility − favor)).
+
+----------------------------------------------------------------------------------------------
+PHASE 10 — Milestones & Tests
+----------------------------------------------------------------------------------------------
+Milestone A (Core Explore): move on a 64x64 layer, render 16x16 viewport, stairs work.
+Milestone B (Encounters): stepping on DevilGate/AngelAltar opens a placeholder encounter UI.
+Milestone C (Combat): 10x10 battle grid, basic move+attack, win condition and loot.
+Milestone D (Items): equip screen applies stat bonuses; ownership enforced (no duplicate use).
+Milestone E (Abilities): mana costs, effects, CC resist logic implemented.
+Milestone F (Devils & Angels): contracts, refusals, attack option, memory system, upgrades.
+Milestone G (Progression): XP/leveling, loot tables by depth, save/load.
+
+Test checklist (repeat each milestone):
+  [ ] No crash on switching modes (Explore <-> Combat <-> Encounter).
+  [ ] Stats update correctly on equip/unequip (verify totals).
+  [ ] CC durations change with Int difference (unit tests for thresholds).
+  [ ] Devil “attack on refusal” path works and adjusts memory values.
+  [ ] Angel “>50% devil contracts -> always attack” rule triggers correctly.
+  [ ] Victory/defeat flows drop loot or apply penalties as designed.
+
+----------------------------------------------------------------------------------------------
+PHASE 11 — Stretch Goals (after v1)
+----------------------------------------------------------------------------------------------
+- Procedural biome themes (ice/lava/poison) that add floor-wide modifiers.
+- Line-of-sight & fog-of-war in combat (ranged accuracy drops with cover).
+- Environmental hazards (explosive barrels, traps on battle grid).
+- Party formations & flanking bonuses (+crit when attacking from behind).
+- Event narrative system (tiny text choices with stat checks: Int, Spd, or Def).
+- Boss phases with scripted abilities and arena changes.
+- Controller support and key rebinding.
+
+----------------------------------------------------------------------------------------------
+BUILD ORDER TL;DR (print & pin on your wall)
+----------------------------------------------------------------------------------------------
+1) Boot project with SFML window + black screen.
+2) Implement Game state + 10 layers of 64x64 Tiles; render simple colored squares.
+3) Player movement + 16x16 camera; stairs to change layer.
+4) Random dungeon generation (rooms+corridors). Place Devil/Angel/Treasure.
+5) Entity base + Hero + Enemy. Place 1–3 enemies wandering on the map.
+6) Enter Combat mode on contact; build 10x10 grid; move+attack turns by Speed.
+7) Damage formula, basic AI, victory loot (gold or item).
+8) Items/equipment; per-unit ownership; stat totals update UI.
+9) Abilities & Mana; CC resist thresholds using Intelligence.
+10) Devil/Angel encounters, contracts, refusal, attack option, memory.
+11) XP, level-ups, loot tables by depth; save/load.
+12) Polish UI, hotkeys, logs; ship v1.
+
+You’ve got this. Build the scaffolding first, then add the fun systems layer by layer. :)
