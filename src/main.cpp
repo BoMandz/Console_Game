@@ -1,15 +1,5 @@
-#include <SFML/Graphics.hpp>
-
-int main() {
-    sf::RenderWindow window(sf::VideoMode(800, 600), "SFML + MSYS2 + Makefile");
-    while (window.isOpen()) {
-        sf::Event event;
-        while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed)
-                window.close();
-        }
-        window.clear(sf::Color::Black);
-        window.display();
-    }
+int main(int argc, char const *argv[])
+{
+    
     return 0;
 }
