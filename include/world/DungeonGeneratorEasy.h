@@ -1,40 +1,24 @@
-#ifndef DUNGEONGENERATOREASY_H
-#define DUNGEONGENERATOREASY_H
+#ifndef DUNGEON_GENERATOR_EASY_H
+#define DUNGEON_GENERATOR_EASY_H
 
-#include <iostream>
-#include <vector>
-#include <algorithm>
-#include <cstdlib>
-#include <ctime>
-#include <random>
-#include <set>
-#include <string>
+#include "DungeonCommon.h"
 
-struct Floor {
-    static const int WIDTH = 64;
-    static const int HEIGHT = 64;
-    char tiles[WIDTH][HEIGHT];
+using EasyFloor = Floor<DungeonConfig::EASY_WIDTH, DungeonConfig::EASY_HEIGHT>;
+
+class EasyDungeonGenerator {
+public:
+    void generate(EasyFloor& floor);
+    void print(const EasyFloor& floor) const;
+    
+private:
+    struct Room : public Rect {
+        Room(int l, int r, int t, int b) 
+            : Rect(l, t, r-l, b-t) {}
+    };
+
+    void initFloor(EasyFloor& floor);
+    std::vector<Room> createRooms(EasyFloor& floor, int vWalls, int hWalls);
+    void addDoors(EasyFloor& floor, const std::vector<Room>& rooms);
 };
 
-struct Room {
-    int left, right, top, bottom;
-    Room(int l, int r, int t, int b) : left(l), right(r), top(t), bottom(b) {}
-};
-
-// Initialization
-void initFloor(Floor &floor);
-
-// Utility
-std::vector<int> generateUniqueRandoms(int count, int min, int max, int minSpacing = 4);
-
-// Wall + room generation
-std::vector<Room> addWallsAndGetRooms(Floor &floor, int vCount, int hCount);
-
-// Doors
-void addDoorsToRooms(Floor &floor, const std::vector<Room> &rooms);
-
-// Debug / printing
-void printFloor(const Floor &floor);
-void printRoomInfo(const std::vector<Room> &rooms);
-
-#endif // DUNGEON_H
+#endif

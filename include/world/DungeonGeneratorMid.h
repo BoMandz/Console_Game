@@ -1,45 +1,31 @@
 #ifndef DUNGEON_GENERATOR_MID_H
 #define DUNGEON_GENERATOR_MID_H
 
-#include <vector>
-#include <random>
-#include <utility>
+#include "DungeonCommon.h"
+#include "BSPTree.h"
 
-// Forward declarations
-struct Floor;
-struct Rect;
-struct BSPNode;
+using MidFloor = Floor<DungeonConfig::MID_WIDTH, DungeonConfig::MID_HEIGHT>;
 
-class BSPDungeonGenerator {
+class MidDungeonGenerator {
+public:
+    MidDungeonGenerator();
+    void generate(MidFloor& floor, int roomCount = 16);
+    int getRoomCount() const { return rooms.size(); }
+    int calculateDepth(int roomCount) const;
+    void collectRooms(BSPNode* node, std::vector<Rect>& roomList);
+    Rect getRandomRoom(BSPNode* node);
+    void createConnections(BSPNode* node);
+    
 private:
-    std::mt19937 rng;
-    Floor* floor;
-    BSPNode* root;
+    BSPTree bspTree;
     std::vector<Rect> rooms;
     std::vector<std::pair<Rect, Rect>> connections;
-    int targetRoomCount;
-    int maxDepth;
+    std::mt19937 rng;
 
-    // Private member functions
-    int calculateDepth(int roomCount);
-    void splitNode(BSPNode* node, int depth);
-    int countLeafNodes(BSPNode* node);
-    void createRooms(BSPNode* node);
-    void carveRooms();
-    void collectRooms(BSPNode* node, std::vector<Rect>& roomList);
-    void createConnections(BSPNode* node);
-    Rect getRandomRoom(BSPNode* node);
-    void carveCorridors();
-    void carveHorizontalCorridor(int x1, int x2, int y);
-    void carveVerticalCorridor(int y1, int y2, int x);
-    void addDoors();
-
-public:
-    BSPDungeonGenerator();
-    ~BSPDungeonGenerator();
-
-    void generate(Floor& f, int roomCount = 16);
-    int getRoomCount() const;
+    void carveRooms(MidFloor& floor);
+    void createConnections();
+    void carveCorridors(MidFloor& floor);
+    void addDoors(MidFloor& floor);
 };
 
-#endif // DUNGEON_GENERATOR_MID_H
+#endif
