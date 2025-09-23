@@ -70,7 +70,7 @@ PHASE 1 — Core Types & Game Loop
 
     // Equipment slots
     enum class Slot { Weapon, Armor, Boots, Cloak, Helmet, Accessory };
-
+------
 1.2 Game state skeleton
     class Game {
         // world
