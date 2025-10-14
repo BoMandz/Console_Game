@@ -10,6 +10,8 @@ namespace DungeonConfig {
     constexpr int EASY_HEIGHT = 64;
     constexpr int MID_WIDTH = 128;
     constexpr int MID_HEIGHT = 128;
+    constexpr int HARD_WIDTH = 256;
+    constexpr int HARD_HEIGHT = 256;
 }
 
 // Unified rectangle structure
