@@ -1,8 +1,8 @@
 #ifndef DUNGEON_GENERATOR_HARD_H
 #define DUNGEON_GENERATOR_HARD_H
 
-#include "DungeonCommon.h"
-#include "BSPTree.h"
+#include "include/world/DungeonCommon.h"
+#include "include/world/algorithm/BSPTree.h"
 
 using HardFloor = Floor<DungeonConfig::HARD_WIDTH, DungeonConfig::HARD_HEIGHT>;
 

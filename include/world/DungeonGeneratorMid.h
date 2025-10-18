@@ -2,7 +2,7 @@
 #define DUNGEON_GENERATOR_MID_H
 
 #include "DungeonCommon.h"
-#include "BSPTree.h"
+#include "include/world/algorithm/BSPTree.h"
 
 using MidFloor = Floor<DungeonConfig::MID_WIDTH, DungeonConfig::MID_HEIGHT>;
 
